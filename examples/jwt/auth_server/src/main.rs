@@ -4,11 +4,14 @@ use {
     jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation},
     serde::{Deserialize, Serialize},
     tide::{
-        http::{headers::HeaderValue, StatusCode},
+        http::{
+            headers::{self, HeaderValue},
+            StatusCode,
+        },
         security::{CorsMiddleware, Origin},
-        Body, Redirect, Request, Response,
+        Body, Request, Response,
     },
-    time::Duration as TimeDuration,
+    time,
 };
 
 // This secret is used to encode and decode tokens.
@@ -28,13 +31,13 @@ async fn main() -> tide::Result<()> {
     // We need to allow cross origin requests from our PWA server.
     app.middleware(
         CorsMiddleware::new()
-            .allow_methods("GET, POST, OPTIONS".parse::<HeaderValue>().unwrap())
-            .allow_origin(Origin::from(CLIENT))
+            .allow_methods("GET, POST, DELETE, OPTIONS".parse::<HeaderValue>().unwrap())
+            .allow_origin(Origin::from(vec![CLIENT, "http://127.0.0.1:8000"]))
             .allow_credentials(true),
     );
 
-    app.at("/sign-in").get(sign_in);
-    app.at("/sign-out").get(sign_out);
+    app.at("/sign-in").post(sign_in);
+    app.at("/sign-out").delete(sign_out);
     app.at("/signed-in").get(signed_in);
 
     app.listen("localhost:8081").await?;
@@ -48,28 +51,42 @@ async fn sign_in(
     // this example.
     _: Request<()>,
 ) -> tide::Result<Response> {
-    // Lets set the response to redirect to our PWA server once the cookie is provided.
-    let mut response: Response = Redirect::new(CLIENT).into();
+    let mut response = Response::new(StatusCode::Ok);
+
     // We will give the user the username "nori". We will not bother with a password for
     // nori yet as that would be out of the scope of this example.
-    response.insert_cookie(
-        Cookie::build("login", Claims::new("nori".to_owned()).get_token()?)
-            // Let's make sure that this cookie is only sent over a secure connection.
-            .secure(true)
-            .http_only(true)
-            // The token will only be valid for a day so let's set the `max-age` of the
-            // cookie to reflect this.
-            .max_age(TimeDuration::days(Claims::max_age_days()))
-            .finish(),
-    );
+
+    let cookie = Cookie::build("login", Claims::new("nori".to_owned()).get_token()?)
+        // Let's make sure that this cookie is only sent over a secure connection.
+        // .secure(true)
+        .http_only(true)
+        .path("/")
+        .domain("localhost")
+        // The token will only be valid for a day so let's set the `max-age` of the
+        // cookie to reflect this.
+        .max_age(time::Duration::days(Claims::max_age_days()))
+        .finish()
+        .encoded()
+        .to_string();
+
+    response.append_header(headers::SET_COOKIE, cookie);
     Ok(response)
 }
 
 // Simply "signs out" a user by removing the token cookie.
-async fn sign_out(_: Request<()>) -> tide::Result<Response> {
-    let mut res: Response = Redirect::new(CLIENT).into();
-    res.remove_cookie(Cookie::named("login"));
-    Ok(res)
+async fn sign_out(request: Request<()>) -> tide::Result<Response> {
+    let mut response = Response::new(StatusCode::Ok);
+
+    if let Some(mut cookie) = request.cookie("login") {
+        // cookie.set_secure(true);
+        cookie.set_http_only(true);
+        cookie.set_path("/");
+        cookie.set_value("");
+        cookie.set_expires(time::OffsetDateTime::now_utc());
+
+        response.append_header(headers::SET_COOKIE, cookie.encoded().to_string());
+    }
+    Ok(response)
 }
 
 // Checks if a user is signed in.
