@@ -56,11 +56,31 @@ enum LoginStatus {
 
 enum Msg {
     LoginStatusFetched(LoginStatus),
+    SignIn,
+    SignOut,
 }
 
-fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
+fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
     match msg {
         Msg::LoginStatusFetched(login_status) => model.login_status = login_status,
+        Msg::SignIn => {
+            orders.perform_cmd(async {
+                let x = Request::new(&format!("{}/sign-in", AUTH_SERVER))
+                    .fetch()
+                    .await;
+               log! (match x {
+                    Err(x) =>format!("{:?}/1", x), 
+                    Ok(x) => format!("/2"),
+                });
+            });
+        }
+        Msg::SignOut => {
+            orders.perform_cmd(async {
+                Request::new(&format!("{}/sign-out", AUTH_SERVER))
+                    .fetch()
+                    .await;
+            });
+        }
     }
 }
 
@@ -76,16 +96,10 @@ fn view(model: &Model) -> Node<Msg> {
         ],
         match model.login_status {
             LoginStatus::LoggedIn => {
-                a![
-                    "Sign Out",
-                    attrs! {At::Href => format!("{}/sign-out", AUTH_SERVER)}
-                ]
+                button!["Sign Out", ev(Ev::Click, |_| Msg::SignOut),]
             }
             LoginStatus::NotLoggedIn => {
-                a![
-                    "Sign In",
-                    attrs! {At::Href => format!("{}/sign-in", AUTH_SERVER)}
-                ]
+                button!["Sign In", ev(Ev::Click, |_| Msg::SignIn),]
             }
             LoginStatus::FetchFailed(_) => p!["Failed to fetch login status"],
             LoginStatus::Fetching => p!["Loading"],
