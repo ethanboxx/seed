@@ -9,6 +9,7 @@ use {
         Body, Redirect, Request, Response,
     },
     time::Duration as TimeDuration,
+    cookie::SameSite
 };
 
 // This secret is used to encode and decode tokens.
@@ -48,18 +49,20 @@ async fn sign_in(
     // this example.
     _: Request<()>,
 ) -> tide::Result<Response> {
-    // Lets set the response to redirect to our PWA server once the cookie is provided.
-    let mut response: Response = Redirect::new(CLIENT).into();
+    let mut response: Response = Response::new(StatusCode::Found);
     // We will give the user the username "nori". We will not bother with a password for
     // nori yet as that would be out of the scope of this example.
     response.insert_cookie(
         Cookie::build("login", Claims::new("nori".to_owned()).get_token()?)
             // Let's make sure that this cookie is only sent over a secure connection.
-            .secure(true)
-            .http_only(true)
+            // .secure(true)
+            // .http_only(true)
             // The token will only be valid for a day so let's set the `max-age` of the
             // cookie to reflect this.
             .max_age(TimeDuration::days(Claims::max_age_days()))
+            .same_site(SameSite::Lax)
+            .path(CLIENT)
+            .domain(CLIENT)
             .finish(),
     );
     Ok(response)
@@ -67,9 +70,9 @@ async fn sign_in(
 
 // Simply "signs out" a user by removing the token cookie.
 async fn sign_out(_: Request<()>) -> tide::Result<Response> {
-    let mut res: Response = Redirect::new(CLIENT).into();
-    res.remove_cookie(Cookie::named("login"));
-    Ok(res)
+    let mut response: Response = Response::new(StatusCode::Ok);
+    response.remove_cookie(Cookie::named("login"));
+    Ok(response)
 }
 
 // Checks if a user is signed in.
@@ -80,7 +83,7 @@ async fn signed_in(request: Request<()>) -> tide::Result<Response> {
             .ok()
     });
 
-    let mut response = Response::new(StatusCode::Ok);
+    let mut response: Response = Response::new(StatusCode::Ok);
     response.set_body(Body::from_json(&user.is_some())?);
     Ok(response)
 }
